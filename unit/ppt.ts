@@ -1,60 +1,47 @@
-import { ModifyTextHelper, Automizer } from 'pptx-automizer'
-import {
-  backCoverI,
-  catalogueI,
-  coverI,
-  presenterPre,
-  styleBegin,
-  summaryI,
-} from '../config/ppt.js'
-
-const templateDir = './templates'
-import { MinioServer } from './minio.js'
+import Automizer, { ModifyTextHelper } from "pptx-automizer/dist";
+import { PPTConfig } from "../config/ppt";
+import { Outline } from "../type/outline";
+import { MinioService } from "./minio";
 
 export class PPT {
-  automizer
-  minio
+  private automizer: Automizer
+  private config: PPTConfig
+  private minio: MinioService
 
   constructor() {
+    this.config = new PPTConfig();
     this.automizer = new Automizer({
-      templateDir: templateDir, // 模板文件目录
+      templateDir: this.config.templateDir, // 模板文件夹路径
       removeExistingSlides: true, // 移除根模板中的现有幻灯片
-    })
-    this.minio = new MinioServer()
+    });
+    this.minio = new MinioService()
   }
 
   /**
-   *
-   * @param {*} outline 大纲
-   * @param {*} template 模板
-   * @param {*} catalogueSize 目录数量
-   * @param {*} topicSize 论题数量
-   * @param {*} argumentSize 论点数量
-   * @param {*} styleLength 样式尺寸
+   * 
+   * @param outline 大纲
+   * @param template 模板
+   * @param catalogueSize 目录数量 = 4
+   * @param topicSize 论题数量 = 4
+   * @param argumentSize 论点数量 = 4
+   * @param styleLength 样式尺寸 = 2
    */
-  create(
-    outline,
-    template,
-    catalogueSize,
-    topicSize,
-    argumentSize,
-    styleLength
-  ) {
+  create(outline: Outline, template: string, catalogueSize = 4, topicSize = 4, argumentSize = 4, styleLength = 2) : Promise<string> {
     let pres = this.automizer.loadRoot(template).load(template)
 
     // 封面制作
-    pres.addSlide(template, coverI, (slide) => {
+    pres.addSlide(template, this.config.coverI, (slide) => {
       slide.modifyElement('title', [ModifyTextHelper.setText(outline.title)])
       slide.modifyElement('subtitle', [
         ModifyTextHelper.setText(outline.subtitle),
       ])
       slide.modifyElement('presenter', [
-        ModifyTextHelper.setText(presenterPre + outline.presenter),
+        ModifyTextHelper.setText(this.config.presenterPre + outline.presenter),
       ])
     })
 
     // 目录制作
-    pres.addSlide(template, catalogueI, (slide) => {
+    pres.addSlide(template, this.config.catalogueI, (slide) => {
       for (let i = 0; i < catalogueSize; ++i) {
         slide.modifyElement('catalogue' + (i + 1), [
           ModifyTextHelper.setText(outline.outline[i].title),
@@ -66,7 +53,7 @@ export class PPT {
     let stylei = 0
     for (let page = 0; page < catalogueSize; ++page) {
       // 制作总结页
-      pres.addSlide(template, summaryI, (slide) => {
+      pres.addSlide(template, this.config.summaryI, (slide) => {
         slide.modifyElement('index', [ModifyTextHelper.setText(page + 1)])
         slide.modifyElement('title', [
           ModifyTextHelper.setText(outline.outline[page].title),
@@ -80,7 +67,7 @@ export class PPT {
         if (stylei === styleLength) {
           stylei = 0
         }
-        pres.addSlide(template, stylei + styleBegin, (slide) => {
+        pres.addSlide(template, stylei + this.config.styleBegin, (slide) => {
           slide.modifyElement('page_title', [
             ModifyTextHelper.setText(
               outline.outline[page].content[topic].title
@@ -104,13 +91,13 @@ export class PPT {
     }
 
     // 封底制作
-    pres.addSlide(template, backCoverI)
+    pres.addSlide(template, this.config.backCoverI)
 
     // 生成输出文件
     return new Promise((resolve) => {
       pres.getJSZip().then((jsZip) => {
         jsZip.generateAsync({ type: 'arraybuffer' }).then((arrayBuffer) => {
-          let url = this.minio.savePpt(arrayBuffer)
+          let url = this.minio.save(arrayBuffer, 'pptx')
           resolve(url)
         })
       })
